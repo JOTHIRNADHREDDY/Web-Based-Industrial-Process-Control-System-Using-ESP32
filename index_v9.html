@@ -1,0 +1,2128 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ESP32 Process Dashboard v2</title>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap"
+    rel="stylesheet">
+  <style>
+    /* ═══════════════════════════════════════════
+   TOKENS
+═══════════════════════════════════════════ */
+    :root {
+      --bg: #060a0f;
+      --bg2: #0b1320;
+      --bg3: #0f1e30;
+      --panel: #0d1928;
+      --border: #152336;
+      --border2: #1e3550;
+
+      --amber: #ffb347;
+      --amber-dim: #7a4f18;
+      --cyan: #00e5ff;
+      --cyan-dim: #004d5c;
+      --green: #39ff14;
+      --green-dim: #0d3a05;
+      --red: #ff3b3b;
+      --red-dim: #4a0d0d;
+      --yellow: #ffe033;
+
+      --text: #c8d8e8;
+      --text-dim: #4a6a88;
+      --mono: 'Share Tech Mono', monospace;
+      --sans: 'Rajdhani', sans-serif;
+
+      /* channel colours */
+      --ch-temp: #ff6b35;
+      --ch-pres: #00e5ff;
+      --ch-level: #39ff14;
+      --ch-motor: #bf8fff;
+    }
+
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      height: 100%;
+    }
+
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+      /* phosphor scanlines */
+      background-image:
+        repeating-linear-gradient(0deg,
+          transparent, transparent 3px,
+          rgba(0, 229, 255, .018) 3px, rgba(0, 229, 255, .018) 4px);
+    }
+
+    /* ═══════════════════════════════════════════
+   HEADER
+═══════════════════════════════════════════ */
+    header {
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border2);
+      padding: 0 24px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .hdr-title {
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: .2em;
+      text-transform: uppercase;
+      color: var(--cyan);
+      white-space: nowrap;
+    }
+
+    .ip-container {
+      display: flex;
+      align-items: center;
+      border: 1px solid var(--border2);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-left: 8px;
+    }
+
+    .ip-input {
+      background: var(--bg3);
+      border: none;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: .7rem;
+      padding: 4px 8px;
+      width: 110px;
+      outline: none;
+    }
+
+    .ip-input:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .ip-btn {
+      background: rgba(0, 229, 255, .05);
+      border: none;
+      border-left: 1px solid var(--border2);
+      color: var(--cyan);
+      font-family: var(--sans);
+      font-size: .65rem;
+      font-weight: 700;
+      letter-spacing: .1em;
+      padding: 4px 10px;
+      cursor: pointer;
+      transition: all .2s;
+    }
+
+    .ip-btn:hover {
+      background: var(--cyan);
+      color: var(--bg);
+    }
+
+    .ip-btn.connected {
+      background: rgba(57, 255, 20, .1);
+      color: var(--green);
+    }
+
+    .ip-btn.connected:hover {
+      background: var(--green);
+      color: var(--bg);
+    }
+
+    .hdr-chip {
+      font-family: var(--mono);
+      font-size: .6rem;
+      padding: 2px 7px;
+      border: 1px solid var(--border2);
+      color: var(--text-dim);
+      border-radius: 2px;
+      letter-spacing: .08em;
+      white-space: nowrap;
+    }
+
+    .hdr-spacer {
+      flex: 1;
+    }
+
+    #hdr-status {
+      font-family: var(--mono);
+      font-size: .7rem;
+      letter-spacing: .1em;
+      padding: 4px 12px;
+      border-radius: 2px;
+      border: 1px solid;
+      transition: all .4s;
+    }
+
+    .s-NORMAL {
+      color: var(--green);
+      border-color: var(--green) !important;
+      background: rgba(57, 255, 20, .07);
+    }
+
+    .s-WARNING {
+      color: var(--yellow);
+      border-color: var(--yellow) !important;
+      background: rgba(255, 224, 51, .07);
+    }
+
+    .s-ALARM {
+      color: var(--red);
+      border-color: var(--red) !important;
+      background: rgba(255, 59, 59, .07);
+      animation: flash .7s infinite;
+    }
+
+    @keyframes flash {
+      50% {
+        opacity: .4;
+      }
+    }
+
+    #hdr-uptime,
+    #hdr-clock {
+      font-family: var(--mono);
+      font-size: .7rem;
+      color: var(--text-dim);
+      white-space: nowrap;
+    }
+
+    /* ═══════════════════════════════════════════
+   TABS
+═══════════════════════════════════════════ */
+    .tabs {
+      display: flex;
+      gap: 2px;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+    }
+
+    .tab-btn {
+      font-family: var(--sans);
+      font-size: .75rem;
+      font-weight: 600;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      padding: 10px 18px 8px;
+      cursor: pointer;
+      transition: color .2s, border-color .2s;
+    }
+
+    .tab-btn:hover {
+      color: var(--text);
+    }
+
+    .tab-btn.active {
+      color: var(--cyan);
+      border-bottom-color: var(--cyan);
+    }
+
+    .tab-pane {
+      display: none;
+      padding: 24px;
+    }
+
+    .tab-pane.active {
+      display: block;
+    }
+
+    /* ═══════════════════════════════════════════
+   OVERVIEW — gauges grid
+═══════════════════════════════════════════ */
+    .overview-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    @media(max-width:900px) {
+      .overview-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    .gauge-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 20px 16px 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+      overflow: hidden;
+      transition: border-color .3s;
+    }
+
+    .gauge-card::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--ch, var(--cyan)), transparent);
+      opacity: .6;
+    }
+
+    .gauge-card[data-ch="temp"] {
+      --ch: var(--ch-temp);
+    }
+
+    .gauge-card[data-ch="pres"] {
+      --ch: var(--ch-pres);
+    }
+
+    .gauge-card[data-ch="level"] {
+      --ch: var(--ch-level);
+    }
+
+    .gauge-card[data-ch="motor"] {
+      --ch: var(--ch-motor);
+    }
+
+    .gc-label {
+      font-size: .65rem;
+      font-weight: 700;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 10px;
+      align-self: flex-start;
+    }
+
+    /* Specific Advanced SVG Styles */
+    .gc-svg {
+      width: 100%;
+      height: 130px;
+      overflow: visible;
+      display: block;
+      margin: 0 auto;
+    }
+
+    /* Dynamic Animations */
+    #temp-fill,
+    #level-fill {
+      transition: height 0.4s cubic-bezier(0.4, 0, 0.2, 1), y 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    #pres-needle-group {
+      transform-origin: 70px 70px;
+      transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    #motor-needle-group {
+      transform-origin: 70px 80px;
+      transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    #pres-arc,
+    #motor-arc {
+      transition: stroke-dashoffset 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .gc-value {
+      font-family: var(--mono);
+      font-size: 1.8rem;
+      color: var(--ch, var(--cyan));
+      line-height: 1;
+      margin-top: 10px;
+      transition: color .4s;
+    }
+
+    .gc-unit {
+      font-size: .65rem;
+      color: var(--text-dim);
+      letter-spacing: .1em;
+      margin-top: 3px;
+    }
+
+    /* ── status bar (overview) ── */
+    .status-bar {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    #ov-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 10px var(--green);
+      flex-shrink: 0;
+    }
+
+    #ov-status-text {
+      font-size: .85rem;
+      font-weight: 700;
+      letter-spacing: .2em;
+      color: var(--green);
+    }
+
+    .status-divider {
+      width: 1px;
+      height: 24px;
+      background: var(--border2);
+    }
+
+    .stat-pill {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .stat-pill span:first-child {
+      font-size: .55rem;
+      letter-spacing: .1em;
+      color: var(--text-dim);
+      text-transform: uppercase;
+    }
+
+    .stat-pill span:last-child {
+      font-family: var(--mono);
+      font-size: .8rem;
+      color: var(--text);
+    }
+
+    .ov-msg {
+      font-family: var(--mono);
+      font-size: .65rem;
+      color: var(--text-dim);
+      margin-left: auto;
+    }
+
+    /* ═══════════════════════════════════════════
+   TRENDS — canvas chart
+═══════════════════════════════════════════ */
+    .trends-layout {
+      display: grid;
+      grid-template-columns: 1fr 200px;
+      gap: 16px;
+    }
+
+    @media(max-width:800px) {
+      .trends-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .chart-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 16px;
+    }
+
+    .chart-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .chart-title {
+      font-size: .75rem;
+      font-weight: 700;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+    }
+
+    .range-btns {
+      display: flex;
+      gap: 4px;
+      margin-left: auto;
+    }
+
+    .range-btn {
+      font-family: var(--mono);
+      font-size: .6rem;
+      padding: 3px 8px;
+      background: none;
+      border: 1px solid var(--border2);
+      color: var(--text-dim);
+      border-radius: 2px;
+      cursor: pointer;
+      transition: all .2s;
+    }
+
+    .range-btn:hover,
+    .range-btn.active {
+      border-color: var(--cyan);
+      color: var(--cyan);
+      background: rgba(0, 229, 255, .07);
+    }
+
+    #trend-canvas {
+      width: 100%;
+      height: 280px;
+      display: block;
+    }
+
+    .legend-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 16px;
+    }
+
+    .legend-title {
+      font-size: .65rem;
+      font-weight: 700;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 12px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: opacity .2s;
+    }
+
+    .legend-item:last-child {
+      border-bottom: none;
+    }
+
+    .legend-item.hidden {
+      opacity: .3;
+    }
+
+    .leg-swatch {
+      width: 14px;
+      height: 3px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+
+    .leg-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .leg-name {
+      font-size: .7rem;
+      font-weight: 600;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    .leg-val {
+      font-family: var(--mono);
+      font-size: .75rem;
+    }
+
+    .leg-delta {
+      font-family: var(--mono);
+      font-size: .6rem;
+    }
+
+    .delta-up {
+      color: var(--red);
+    }
+
+    .delta-down {
+      color: var(--green);
+    }
+
+    .delta-flat {
+      color: var(--text-dim);
+    }
+
+    /* ═══════════════════════════════════════════
+   ALARMS
+═══════════════════════════════════════════ */
+    .alarms-layout {
+      display: grid;
+      grid-template-columns: 1fr 260px;
+      gap: 16px;
+    }
+
+    @media(max-width:800px) {
+      .alarms-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .alarm-log-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .alarm-log-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg3);
+    }
+
+    .alarm-log-title {
+      font-size: .7rem;
+      font-weight: 700;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+    }
+
+    .alarm-count {
+      font-family: var(--mono);
+      font-size: .6rem;
+      background: var(--red-dim);
+      color: var(--red);
+      border: 1px solid var(--red);
+      border-radius: 10px;
+      padding: 1px 8px;
+    }
+
+    .btn-clear {
+      margin-left: auto;
+      font-family: var(--mono);
+      font-size: .6rem;
+      background: none;
+      border: 1px solid var(--border2);
+      color: var(--text-dim);
+      padding: 3px 10px;
+      border-radius: 2px;
+      cursor: pointer;
+      transition: all .2s;
+    }
+
+    .btn-clear:hover {
+      border-color: var(--red);
+      color: var(--red);
+    }
+
+    #alarm-list {
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    #alarm-list::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    #alarm-list::-webkit-scrollbar-track {
+      background: var(--panel);
+    }
+
+    #alarm-list::-webkit-scrollbar-thumb {
+      background: var(--border2);
+      border-radius: 2px;
+    }
+
+    .alarm-row {
+      display: grid;
+      grid-template-columns: 90px 70px 1fr;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      animation: slideIn .3s ease-out;
+      font-family: var(--mono);
+      font-size: .65rem;
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateX(-8px);
+      }
+    }
+
+    .alarm-row:last-child {
+      border-bottom: none;
+    }
+
+    .alarm-time {
+      color: var(--text-dim);
+    }
+
+    .alarm-sev {
+      font-weight: 700;
+      letter-spacing: .1em;
+      padding: 2px 6px;
+      border-radius: 2px;
+      border: 1px solid;
+      text-align: center;
+    }
+
+    .sev-ALARM {
+      color: var(--red);
+      border-color: var(--red);
+      background: var(--red-dim);
+    }
+
+    .sev-WARNING {
+      color: var(--yellow);
+      border-color: var(--yellow);
+      background: rgba(255, 224, 51, .1);
+    }
+
+    .sev-OK {
+      color: var(--green);
+      border-color: var(--green);
+      background: var(--green-dim);
+    }
+
+    .alarm-msg {
+      color: var(--text);
+    }
+
+    /* alarm summary */
+    .alarm-summary-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 16px;
+    }
+
+    .as-title {
+      font-size: .65rem;
+      font-weight: 700;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 12px;
+    }
+
+    .as-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: .75rem;
+    }
+
+    .as-row:last-child {
+      border-bottom: none;
+    }
+
+    .as-key {
+      color: var(--text-dim);
+      letter-spacing: .08em;
+    }
+
+    .as-val {
+      font-family: var(--mono);
+      font-weight: 700;
+    }
+
+    /* ═══════════════════════════════════════════
+   CONTROLS
+═══════════════════════════════════════════ */
+    .controls-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    @media(max-width:700px) {
+      .controls-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .ctrl-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 20px;
+    }
+
+    .ctrl-title {
+      font-size: .7rem;
+      font-weight: 700;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 16px;
+    }
+
+    /* slider row */
+    .slider-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 16px;
+    }
+
+    .slider-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .slider-name {
+      font-size: .75rem;
+      font-weight: 600;
+      letter-spacing: .1em;
+    }
+
+    .slider-readout {
+      font-family: var(--mono);
+      font-size: .8rem;
+      color: var(--cyan);
+    }
+
+    input[type=range] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 4px;
+      background: var(--border2);
+      border-radius: 2px;
+      outline: none;
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--cyan);
+      cursor: pointer;
+      box-shadow: 0 0 8px var(--cyan);
+    }
+
+    input[type=range]:focus::-webkit-slider-thumb {
+      box-shadow: 0 0 14px var(--cyan);
+    }
+
+    /* threshold table */
+    .thresh-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .75rem;
+    }
+
+    .thresh-table th {
+      font-size: .6rem;
+      font-weight: 700;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      padding: 4px 8px 8px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+    }
+
+    .thresh-table td {
+      padding: 8px 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .thresh-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .thresh-name {
+      letter-spacing: .06em;
+    }
+
+    .thresh-input {
+      font-family: var(--mono);
+      font-size: .75rem;
+      background: var(--bg3);
+      border: 1px solid var(--border2);
+      color: var(--text);
+      border-radius: 2px;
+      padding: 3px 6px;
+      width: 68px;
+      transition: border-color .2s;
+    }
+
+    .thresh-input:focus {
+      outline: none;
+      border-color: var(--cyan);
+    }
+
+    .thresh-input.warn {
+      border-color: var(--amber-dim);
+    }
+
+    .thresh-input.alarm-lvl {
+      border-color: var(--red-dim);
+    }
+
+    /* ack button */
+    .btn-primary {
+      font-family: var(--sans);
+      font-size: .75rem;
+      font-weight: 600;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      background: none;
+      border: 1px solid var(--cyan);
+      color: var(--cyan);
+      padding: 8px 20px;
+      border-radius: 3px;
+      cursor: pointer;
+      transition: all .2s;
+      margin-top: 12px;
+    }
+
+    .btn-primary:hover {
+      background: rgba(0, 229, 255, .1);
+      box-shadow: 0 0 12px rgba(0, 229, 255, .2);
+    }
+
+    /* sim control */
+    .sim-badge {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: .6rem;
+      padding: 2px 8px;
+      border: 1px solid var(--amber-dim);
+      color: var(--amber);
+      border-radius: 2px;
+      letter-spacing: .08em;
+      margin-bottom: 12px;
+    }
+
+    .scenario-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .scen-btn {
+      font-family: var(--mono);
+      font-size: .65rem;
+      padding: 8px;
+      background: var(--bg3);
+      border: 1px solid var(--border2);
+      color: var(--text-dim);
+      border-radius: 3px;
+      cursor: pointer;
+      transition: all .2s;
+      letter-spacing: .06em;
+    }
+
+    .scen-btn:hover {
+      border-color: var(--cyan);
+      color: var(--cyan);
+    }
+
+    .scen-btn.active {
+      border-color: var(--amber);
+      color: var(--amber);
+      background: rgba(255, 179, 71, .07);
+    }
+
+    /* export btn */
+    .btn-export {
+      font-family: var(--mono);
+      font-size: .65rem;
+      padding: 6px 14px;
+      background: none;
+      border: 1px solid var(--border2);
+      color: var(--text-dim);
+      border-radius: 2px;
+      cursor: pointer;
+      transition: all .2s;
+      margin-left: auto;
+    }
+
+    .btn-export:hover {
+      border-color: var(--green);
+      color: var(--green);
+    }
+
+    /* ═══════════════════════════════════════════
+   PREVIEW BANNER
+═══════════════════════════════════════════ */
+    footer {
+      font-family: var(--mono);
+      font-size: .55rem;
+      text-align: center;
+      color: var(--border2);
+      letter-spacing: .1em;
+      padding: 16px 0 24px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ═══ HEADER ═══ -->
+  <header>
+    <span class="hdr-title">Process Monitor</span>
+    <div class="ip-container">
+      <input type="text" id="ws-ip" class="ip-input" value="192.168.1.42" placeholder="ESP32 IP...">
+      <button class="ip-btn" id="ws-connect-btn" onclick="toggleConnection()">CONNECT</button>
+    </div>
+    <span class="hdr-chip">ESP32-S3</span>
+    <span class="hdr-chip">FW 2.4.1</span>
+    <span class="hdr-spacer"></span>
+    <span id="hdr-uptime">UP 00:00:00</span>
+    <div id="hdr-status" class="s-NORMAL">● NORMAL</div>
+    <span id="hdr-clock">00:00:00</span>
+  </header>
+
+  <!-- ═══ TABS ═══ -->
+  <nav class="tabs">
+    <button class="tab-btn active" onclick="switchTab('overview',this)">Overview</button>
+    <button class="tab-btn" onclick="switchTab('trends',this)">Trends</button>
+    <button class="tab-btn" onclick="switchTab('alarms',this)">Alarms <span id="tab-alarm-ct"></span></button>
+    <button class="tab-btn" onclick="switchTab('controls',this)">Controls</button>
+    <button class="btn-export" onclick="exportCSV()">⬇ Export CSV</button>
+  </nav>
+
+  <!-- ══════════════════════════════
+     OVERVIEW TAB
+══════════════════════════════ -->
+  <div id="tab-overview" class="tab-pane active">
+    <div class="overview-grid">
+
+      <!-- THERMOMETER -->
+      <div class="gauge-card" data-ch="temp">
+        <div class="gc-label">Temperature</div>
+        <svg class="gc-svg" id="g-temp" viewBox="0 0 100 130">
+          <!-- Backplate / Scale -->
+          <line x1="30" y1="20" x2="38" y2="20" stroke="var(--text-dim)" stroke-width="1.5" />
+          <text x="25" y="23" font-family="var(--mono)" font-size="9" fill="var(--text-dim)"
+            text-anchor="end">120</text>
+          <line x1="30" y1="65" x2="38" y2="65" stroke="var(--text-dim)" stroke-width="1.5" />
+          <text x="25" y="68" font-family="var(--mono)" font-size="9" fill="var(--text-dim)" text-anchor="end">60</text>
+          <line x1="30" y1="110" x2="38" y2="110" stroke="var(--text-dim)" stroke-width="1.5" />
+          <text x="25" y="113" font-family="var(--mono)" font-size="9" fill="var(--text-dim)" text-anchor="end">0</text>
+
+          <!-- Glass Tube Outer -->
+          <rect x="42" y="10" width="16" height="105" rx="8" fill="var(--bg2)" stroke="var(--border2)"
+            stroke-width="2" />
+          <circle cx="50" cy="115" r="14" fill="var(--bg2)" stroke="var(--border2)" stroke-width="2" />
+
+          <!-- Liquid Core -->
+          <circle cx="50" cy="115" r="10" fill="var(--ch-temp)" />
+          <!-- Dynamic Fluid Column (max height 90px, base at y=110) -->
+          <rect id="temp-fill" x="46" y="110" width="8" height="0" fill="var(--ch-temp)" />
+        </svg>
+        <div class="gc-value" id="v-temp" style="color:var(--ch-temp)">--.--</div>
+        <div class="gc-unit">°C</div>
+      </div>
+
+      <!-- PRESSURE GAUGE -->
+      <div class="gauge-card" data-ch="pres">
+        <div class="gc-label">Pressure</div>
+        <svg class="gc-svg" id="g-pres" viewBox="0 0 140 130">
+          <!-- Circular Dial -->
+          <circle cx="70" cy="70" r="55" fill="var(--bg2)" stroke="var(--border2)" stroke-width="4" />
+          <circle cx="70" cy="70" r="49" fill="none" stroke="var(--border)" stroke-width="1" />
+
+          <!-- Arc Trails -->
+          <path d="M 31.11 108.89 A 55 55 0 1 1 108.89 108.89" fill="none" stroke="rgba(255,255,255,0.05)"
+            stroke-width="8" />
+          <path id="pres-arc" d="M 31.11 108.89 A 55 55 0 1 1 108.89 108.89" fill="none" stroke="var(--ch-pres)"
+            stroke-width="6" stroke-linecap="round" />
+
+          <!-- Tick marks rendered in JS -->
+          <g id="pres-ticks"></g>
+
+          <!-- Sweeping Needle -->
+          <g id="pres-needle-group">
+            <polygon points="68,70 70,25 72,70" fill="var(--ch-pres)" />
+            <polygon points="68,70 70,82 72,70" fill="var(--border2)" />
+            <circle cx="70" cy="70" r="6" fill="var(--text)" />
+            <circle cx="70" cy="70" r="2" fill="var(--bg2)" />
+          </g>
+        </svg>
+        <div class="gc-value" id="v-pres" style="color:var(--ch-pres)">----.--</div>
+        <div class="gc-unit">hPa</div>
+      </div>
+
+      <!-- TANK LEVEL -->
+      <div class="gauge-card" data-ch="level">
+        <div class="gc-label">Tank Level</div>
+        <svg class="gc-svg" id="g-level" viewBox="0 0 100 130">
+          <!-- Tank Outline -->
+          <path d="M 20 10 L 20 115 A 5 5 0 0 0 25 120 L 75 120 A 5 5 0 0 0 80 115 L 80 10" fill="none"
+            stroke="var(--border2)" stroke-width="4" />
+          <path d="M 15 10 L 85 10" stroke="var(--border2)" stroke-width="4" />
+          <!-- Fluid Base -->
+          <rect x="22" y="12" width="56" height="108" fill="var(--bg2)" />
+          <!-- HIGH ALARM zone (top 5% = top 5.4px of fill area): y=12 to y=17.4 -->
+          <rect x="22" y="12" width="56" height="5" fill="rgba(255,59,59,0.18)" rx="0" />
+          <!-- HIGH WARN zone (80–95% = y=17 to y=33): 15% of 108=16.2px -->
+          <rect x="22" y="17" width="56" height="16" fill="rgba(255,224,51,0.10)" rx="0" />
+          <!-- LOW WARN zone (5–20% = y=99 to y=112): 15% of 108=16.2px -->
+          <rect x="22" y="99" width="56" height="13" fill="rgba(255,224,51,0.10)" rx="0" />
+          <!-- LOW ALARM zone (bottom 5% = y=114 to y=120) -->
+          <rect x="22" y="112" width="56" height="8" fill="rgba(255,59,59,0.18)" rx="0" />
+          <!-- Animated Fluid Fill (max height 108px, base y=120) -->
+          <rect id="level-fill" x="22" y="120" width="56" height="0" fill="var(--ch-level)" opacity="0.85" />
+          <!-- Zone label lines + text -->
+          <line x1="22" y1="17" x2="78" y2="17" stroke="var(--red)" stroke-width="0.7" stroke-dasharray="3,2"
+            opacity="0.7" />
+          <line x1="22" y1="33" x2="78" y2="33" stroke="var(--yellow)" stroke-width="0.7" stroke-dasharray="3,2"
+            opacity="0.6" />
+          <line x1="22" y1="99" x2="78" y2="99" stroke="var(--yellow)" stroke-width="0.7" stroke-dasharray="3,2"
+            opacity="0.6" />
+          <line x1="22" y1="112" x2="78" y2="112" stroke="var(--red)" stroke-width="0.7" stroke-dasharray="3,2"
+            opacity="0.7" />
+          <!-- Right-side zone labels -->
+          <text x="83" y="16" font-family="Share Tech Mono,monospace" font-size="6" fill="var(--red)"
+            text-anchor="start">95%</text>
+          <text x="83" y="36" font-family="Share Tech Mono,monospace" font-size="6" fill="var(--yellow)"
+            text-anchor="start">80%</text>
+          <text x="83" y="102" font-family="Share Tech Mono,monospace" font-size="6" fill="var(--yellow)"
+            text-anchor="start">20%</text>
+          <text x="83" y="115" font-family="Share Tech Mono,monospace" font-size="6" fill="var(--red)"
+            text-anchor="start">5%</text>
+        </svg>
+        <div class="gc-value" id="v-level" style="color:var(--ch-level)">--.--</div>
+        <div class="gc-unit">%</div>
+      </div>
+
+      <!-- RPM GAUGE (replaces Motor Duty) -->
+      <div class="gauge-card" data-ch="motor">
+        <div class="gc-label" style="display:flex; align-items:center;">Motor RPM &nbsp;<span
+            style="font-size:0.5rem; padding:1px 4px; border-radius:2px; color:var(--cyan); border:1px solid var(--border2); font-family:var(--mono); margin-right:auto;">SIMULATED</span><span
+            id="motor-status-pill"
+            style="font-size:.55rem;padding:1px 6px;border-radius:3px;border:1px solid var(--green);color:var(--green);font-family:var(--mono)">NORMAL</span>
+        </div>
+        <svg class="gc-svg" id="g-motor" viewBox="0 0 140 130">
+          <!-- Background track -->
+          <path d="M 20 80 A 50 50 0 0 1 120 80" fill="none" stroke="var(--bg2)" stroke-width="12" />
+          <!-- Warning zone tint 66–100% arc segment -->
+          <path d="M 20 80 A 50 50 0 0 1 120 80" fill="none" stroke="rgba(255,59,59,0.12)" stroke-width="8" />
+          <path d="M 20 80 A 50 50 0 0 1 120 80" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="8" />
+          <!-- Dynamic RPM arc -->
+          <path id="motor-arc" d="M 20 80 A 50 50 0 0 1 120 80" fill="none" stroke="var(--ch-motor)" stroke-width="8" />
+          <!-- Tick marks (rendered by JS) -->
+          <g id="motor-ticks"></g>
+          <!-- Zone labels on dial -->
+          <text x="17" y="96" font-family="Share Tech Mono,monospace" font-size="7" fill="var(--text-dim)"
+            text-anchor="middle">0</text>
+          <text x="70" y="30" font-family="Share Tech Mono,monospace" font-size="7" fill="var(--yellow)"
+            text-anchor="middle">175▲</text>
+          <text x="123" y="96" font-family="Share Tech Mono,monospace" font-size="7" fill="var(--red)"
+            text-anchor="middle">350</text>
+          <!-- Needle -->
+          <g id="motor-needle-group">
+            <polygon points="68,80 70,36 72,80" fill="var(--ch-motor)" />
+            <circle cx="70" cy="80" r="7" fill="var(--bg2)" stroke="var(--border2)" stroke-width="2" />
+            <circle cx="70" cy="80" r="2" fill="var(--text)" />
+          </g>
+          <!-- Motor PWM % below needle -->
+          <text id="pot-label" x="70" y="118" font-family="Share Tech Mono,monospace" font-size="8"
+            fill="var(--text-dim)" text-anchor="middle">PWM: — %</text>
+        </svg>
+        <div class="gc-value" id="v-motor" style="color:var(--ch-motor)">---</div>
+        <div class="gc-unit">RPM</div>
+      </div>
+
+    </div>
+
+    <div class="status-bar">
+      <div id="ov-dot"></div>
+      <div id="ov-status-text">NORMAL</div>
+      <div class="status-divider"></div>
+      <div class="stat-pill"><span>SAMPLES</span><span id="sb-samples">0</span></div>
+      <div class="status-divider"></div>
+      <div class="stat-pill"><span>ALARMS</span><span id="sb-alarms">0</span></div>
+      <div class="status-divider"></div>
+      <div class="stat-pill"><span>RELAY</span><span id="sb-relay" style="color:var(--green)">OK</span></div>
+      <div class="status-divider"></div>
+      <div class="stat-pill"><span>POLL</span><span>500ms</span></div>
+      <div class="ov-msg" id="ov-msg">ALL SYSTEMS NOMINAL</div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════
+     TRENDS TAB
+══════════════════════════════ -->
+  <div id="tab-trends" class="tab-pane">
+    <div class="trends-layout">
+      <div class="chart-card">
+        <div class="chart-header">
+          <span class="chart-title">Time Series</span>
+          <div class="range-btns">
+            <button class="range-btn active" onclick="setRange(60,this)">1m</button>
+            <button class="range-btn" onclick="setRange(300,this)">5m</button>
+            <button class="range-btn" onclick="setRange(600,this)">10m</button>
+          </div>
+        </div>
+        <canvas id="trend-canvas"></canvas>
+      </div>
+      <div class="legend-card">
+        <div class="legend-title">Channels</div>
+        <div class="legend-item" data-ch="temp" onclick="toggleChannel('temp',this)">
+          <div class="leg-swatch" style="background:var(--ch-temp)"></div>
+          <div class="leg-info">
+            <div class="leg-name" style="color:var(--ch-temp)">Temp</div>
+            <div class="leg-val" id="lv-temp">--.-- °C</div>
+            <div class="leg-delta" id="ld-temp">—</div>
+          </div>
+        </div>
+        <div class="legend-item hidden" data-ch="pres" onclick="toggleChannel('pres',this)">
+          <div class="leg-swatch" style="background:var(--ch-pres)"></div>
+          <div class="leg-info">
+            <div class="leg-name" style="color:var(--ch-pres)">Pressure</div>
+            <div class="leg-val" id="lv-pres">----.-- hPa</div>
+            <div class="leg-delta" id="ld-pres">—</div>
+          </div>
+        </div>
+        <div class="legend-item" data-ch="level" onclick="toggleChannel('level',this)">
+          <div class="leg-swatch" style="background:var(--ch-level)"></div>
+          <div class="leg-info">
+            <div class="leg-name" style="color:var(--ch-level)">Level</div>
+            <div class="leg-val" id="lv-level">--.-- %</div>
+            <div class="leg-delta" id="ld-level">—</div>
+          </div>
+        </div>
+        <div class="legend-item" data-ch="motor" onclick="toggleChannel('motor',this)">
+          <div class="leg-swatch" style="background:var(--ch-motor)"></div>
+          <div class="leg-info">
+            <div class="leg-name" style="color:var(--ch-motor)">Motor</div>
+            <div class="leg-val" id="lv-motor">--.-- %</div>
+            <div class="leg-delta" id="ld-motor">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════
+     ALARMS TAB
+══════════════════════════════ -->
+  <div id="tab-alarms" class="tab-pane">
+    <div class="alarms-layout">
+      <div class="alarm-log-card">
+        <div class="alarm-log-header">
+          <span class="alarm-log-title">Event Log</span>
+          <span class="alarm-count" id="alarm-count-badge">0</span>
+          <button class="btn-clear" onclick="clearAlarms()">CLEAR</button>
+        </div>
+        <div id="alarm-list">
+          <div style="padding:24px;text-align:center;font-family:var(--mono);font-size:.7rem;color:var(--text-dim)">NO
+            EVENTS RECORDED</div>
+        </div>
+      </div>
+      <div class="alarm-summary-card">
+        <div class="as-title">Summary</div>
+        <div class="as-row"><span class="as-key">Total Events</span><span class="as-val" id="sum-total">0</span></div>
+        <div class="as-row"><span class="as-key">Alarms</span><span class="as-val" style="color:var(--red)"
+            id="sum-alarms">0</span></div>
+        <div class="as-row"><span class="as-key">Warnings</span><span class="as-val" style="color:var(--yellow)"
+            id="sum-warnings">0</span></div>
+        <div class="as-row"><span class="as-key">Returns to OK</span><span class="as-val" style="color:var(--green)"
+            id="sum-ok">0</span></div>
+        <div class="as-row"><span class="as-key">Last Alarm</span><span class="as-val" id="sum-last">—</span></div>
+        <div class="as-row"><span class="as-key">Session Time</span><span class="as-val" id="sum-session">00:00</span>
+        </div>
+        <button class="btn-primary" onclick="ackAlarms()">ACK ALL ALARMS</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════
+     CONTROLS TAB
+══════════════════════════════ -->
+  <div id="tab-controls" class="tab-pane">
+    <div class="controls-grid">
+
+      <!-- SETPOINTS CARD -->
+      <div class="ctrl-card">
+        <div class="ctrl-title">Setpoints</div>
+
+        <!-- Motor duty override -->
+        <div class="slider-row">
+          <div class="slider-top">
+            <span class="slider-name">Motor Duty Override</span>
+            <span class="slider-readout" id="sp-motor-val">0%</span>
+          </div>
+          <input type="range" id="sp-motor" min="0" max="100" value="0"
+            oninput="document.getElementById('sp-motor-val').textContent=this.value+'%';">
+          <div style="font-family:var(--mono);font-size:.58rem;color:var(--text-dim);margin-top:4px">
+            0% = potentiometer controls motor &nbsp;|&nbsp; 1–100% = dashboard overrides pot
+          </div>
+        </div>
+
+        <!-- Tank setpoint -->
+        <div class="slider-row">
+          <div class="slider-top">
+            <span class="slider-name">Tank Target Level</span>
+            <span class="slider-readout" id="sp-level-val">65%</span>
+          </div>
+          <input type="range" id="sp-level" min="0" max="100" value="65"
+            oninput="document.getElementById('sp-level-val').textContent=this.value+'%';">
+        </div>
+
+        <button class="btn-primary" onclick="sendSetpoints()" style="margin-top:8px">SEND TO ESP32</button>
+        <div id="sp-status" style="font-family:var(--mono);font-size:.6rem;color:var(--text-dim);margin-top:6px"></div>
+      </div>
+
+      <!-- ALARM THRESHOLDS CARD -->
+      <div class="ctrl-card">
+        <div class="ctrl-title">Alarm Thresholds</div>
+        <table class="thresh-table">
+          <tr>
+            <th>Channel</th>
+            <th>Warning</th>
+            <th>Alarm</th>
+          </tr>
+
+          <tr>
+            <td class="thresh-name">Pres hPa</td>
+            <td><input class="thresh-input warn" id="th-pres-w" type="number" value="1070" step="5"></td>
+            <td><input class="thresh-input alarm-lvl" id="th-pres-a" type="number" value="1090" step="5"></td>
+          </tr>
+
+          <tr>
+            <td class="thresh-name">Level % (Low)</td>
+            <td><input class="thresh-input warn" id="th-lvl-lo-w" type="number" value="20" step="5"></td>
+            <td><input class="thresh-input alarm-lvl" id="th-lvl-lo-a" type="number" value="5" step="1"></td>
+          </tr>
+
+          <tr>
+            <td class="thresh-name">Level % (High)</td>
+            <td><input class="thresh-input warn" id="th-lvl-hi-w" type="number" value="80" step="5"></td>
+            <td><input class="thresh-input alarm-lvl" id="th-lvl-hi-a" type="number" value="95" step="1"></td>
+          </tr>
+
+          <tr>
+            <td class="thresh-name">RPM</td>
+            <td><input class="thresh-input warn" id="th-rpm-w" type="number" value="200" step="10"></td>
+            <td><input class="thresh-input alarm-lvl" id="th-rpm-a" type="number" value="300" step="10"></td>
+          </tr>
+        </table>
+        <button class="btn-primary" onclick="applyThresholds()">APPLY — SEND TO ESP32</button>
+        <div id="th-status" style="font-family:var(--mono);font-size:.6rem;color:var(--text-dim);margin-top:6px"></div>
+      </div>
+
+      <!-- SYSTEM INFO CARD -->
+      <div class="ctrl-card">
+        <div class="ctrl-title">System Info</div>
+        <table class="thresh-table">
+          <tr>
+            <td class="thresh-name">Device</td>
+            <td style="font-family:var(--mono);font-size:.7rem">ESP32 DevKit</td>
+          </tr>
+          <tr>
+            <td class="thresh-name">Firmware</td>
+            <td style="font-family:var(--mono);font-size:.7rem" id="sys-fw">—</td>
+          </tr>
+          <tr>
+            <td class="thresh-name">IP Address</td>
+            <td style="font-family:var(--mono);font-size:.7rem" id="sys-ip">—</td>
+          </tr>
+          <tr>
+            <td class="thresh-name">MAC</td>
+            <td style="font-family:var(--mono);font-size:.7rem" id="sys-mac">—</td>
+          </tr>
+          <tr>
+            <td class="thresh-name">RSSI</td>
+            <td style="font-family:var(--mono);font-size:.7rem" id="sys-rssi">— dBm</td>
+          </tr>
+          <tr>
+            <td class="thresh-name">Heap Free</td>
+            <td style="font-family:var(--mono);font-size:.7rem" id="sys-heap">— kB</td>
+          </tr>
+          <tr>
+            <td class="thresh-name">Uptime</td>
+            <td style="font-family:var(--mono);font-size:.7rem" id="sys-uptime">—</td>
+          </tr>
+          <tr>
+            <td class="thresh-name">WS Clients</td>
+            <td style="font-family:var(--mono);font-size:.7rem" id="sys-ws">0</td>
+          </tr>
+          <tr>
+            <td class="thresh-name">Motor</td>
+            <td style="font-family:var(--mono);font-size:.7rem" id="sys-motor">— % PWM</td>
+          </tr>
+          <tr>
+            <td class="thresh-name">Override</td>
+            <td style="font-family:var(--mono);font-size:.7rem" id="sys-override">POT</td>
+          </tr>
+          <tr>
+            <td class="thresh-name">Tank Target</td>
+            <td style="font-family:var(--mono);font-size:.7rem" id="sys-sp-level">— %</td>
+          </tr>
+          <tr>
+            <td class="thresh-name">Relay</td>
+            <td style="font-family:var(--mono);font-size:.7rem" id="sys-relay-state">OK</td>
+          </tr>
+        </table>
+
+        <!-- Relay manual reset button -->
+        <button class="btn-primary" onclick="sendRelayReset()"
+          style="margin-top:12px;border-color:var(--amber);color:var(--amber)">
+          RELAY RESET
+        </button>
+      </div>
+
+
+
+    </div>
+  </div>
+
+  <footer id="footer-banner">▲ SIMULATED DATA — PREVIEW MODE — NO ESP32 CONNECTED — ESP32 PROCESS DASHBOARD v2.0 ▲
+  </footer>
+
+  <script>
+    /* ═══════════════════════════════════════════
+       DIAL INITIALIZATION (Ticks)
+    ═══════════════════════════════════════════ */
+    var ns = 'http://www.w3.org/2000/svg';
+
+    function initDials() {
+      // Pressure Dial Ticks (Sweep: 270°, starts at -135°)
+      var pTicks = document.getElementById('pres-ticks');
+      for (var i = 0; i <= 20; i++) {
+        var a = -135 + (270 / 20) * i;
+        var rad = a * Math.PI / 180;
+        var isMajor = i % 5 === 0;
+        var pRadiusOuter = 55;
+        var pRadiusInner = isMajor ? 45 : 50;
+
+        var line = document.createElementNS(ns, 'line');
+        line.setAttribute('x1', 70 + pRadiusOuter * Math.cos(rad));
+        line.setAttribute('y1', 70 + pRadiusOuter * Math.sin(rad));
+        line.setAttribute('x2', 70 + pRadiusInner * Math.cos(rad));
+        line.setAttribute('y2', 70 + pRadiusInner * Math.sin(rad));
+        line.setAttribute('stroke', isMajor ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.2)');
+        line.setAttribute('stroke-width', isMajor ? '2' : '1');
+        pTicks.appendChild(line);
+      }
+
+      // Motor Dial Ticks (Sweep: 180°, starts at -180°)
+      var mTicks = document.getElementById('motor-ticks');
+      for (var j = 0; j <= 20; j++) {
+        var a2 = -180 + (180 / 20) * j;
+        var rad2 = a2 * Math.PI / 180;
+        var isMajor2 = j % 5 === 0;
+        var mRadiusOuter = 50;
+        var mRadiusInner = isMajor2 ? 40 : 45;
+
+        var line2 = document.createElementNS(ns, 'line');
+        line2.setAttribute('x1', 70 + mRadiusOuter * Math.cos(rad2));
+        line2.setAttribute('y1', 80 + mRadiusOuter * Math.sin(rad2));
+        line2.setAttribute('x2', 70 + mRadiusInner * Math.cos(rad2));
+        line2.setAttribute('y2', 80 + mRadiusInner * Math.sin(rad2));
+        line2.setAttribute('stroke', isMajor2 ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.2)');
+        line2.setAttribute('stroke-width', isMajor2 ? '2' : '1');
+        mTicks.appendChild(line2);
+      }
+    }
+    initDials();
+
+    /* ═══════════════════════════════════════════
+       INSTRUMENT VISUAL UPDATES
+    ═══════════════════════════════════════════ */
+    function updateInstruments(d) {
+      // 1. Thermometer (Range: 0-120, Max height: 90px, base Y: 110)
+      var tPct = Math.max(0, Math.min(1, d.temp / 120));
+      var tHeight = tPct * 90;
+      var tFill = document.getElementById('temp-fill');
+      tFill.setAttribute('height', tHeight);
+      tFill.setAttribute('y', 110 - tHeight);
+
+      // 2. Pressure Gauge (Range: 900-1100, Angle: -135 to 135)
+      var pPct = Math.max(0, Math.min(1, (d.pres - 900) / 200));
+      var pAngle = -135 + (pPct * 270);
+      document.getElementById('pres-needle-group').style.transform = 'rotate(' + pAngle + 'deg)';
+
+      // Update pressure dynamic arc (Path Length for R=55, Sweep=270deg is 259.18)
+      var pDash = 259.18;
+      var pArc = document.getElementById('pres-arc');
+      pArc.style.strokeDasharray = pDash;
+      pArc.style.strokeDashoffset = pDash * (1 - pPct);
+
+      // 3. Tank Level — max height 108px, base y=120 (covers rounded corner)
+      var lPct = Math.max(0, Math.min(1, d.level / 100));
+      var lHeight = lPct * 108;
+      var lFill = document.getElementById('level-fill');
+      lFill.setAttribute('height', lHeight);
+      lFill.setAttribute('y', 120 - lHeight);
+
+      // 4. RPM gauge (replaces Motor Duty). Range 0–300 RPM.
+      // Dial is half-circle: -90° (left=0) to +90° (right=max).
+      var RPM_MAX = 300;
+      var mPct = Math.max(0, Math.min(1, (d.motor || 0) / RPM_MAX));
+      var mAngle = -90 + (mPct * 180);
+      document.getElementById('motor-needle-group').style.transform = 'rotate(' + mAngle + 'deg)';
+      var mDash = 157.08;
+      var mArc = document.getElementById('motor-arc');
+      mArc.style.strokeDasharray = mDash;
+      mArc.style.strokeDashoffset = mDash * (1 - mPct);
+    }
+
+    /* ═══════════════════════════════════════════
+       DATA STORE & LOGIC
+    ═══════════════════════════════════════════ */
+    var MAX_HISTORY = 1800; // 6min @ 200ms
+    var data = { temp: [], pres: [], level: [], motor: [], time: [] };
+
+    var sampleCount = 0;
+    var sessionStart = Date.now();
+
+    function pushData(d) {
+      var now = Date.now();
+      ['temp', 'pres', 'level', 'motor'].forEach(function (k) {
+        data[k].push(d[k]);
+        if (data[k].length > MAX_HISTORY) data[k].shift();
+      });
+      data.time.push(now);
+      if (data.time.length > MAX_HISTORY) data.time.shift();
+      sampleCount++;
+    }
+
+    /* ═══════════════════════════════════════════
+       THRESHOLDS (editable via Controls tab)
+    ═══════════════════════════════════════════ */
+    var TH = {
+      presW: 1070, presA: 1090,
+      lvlLoW: 20, lvlLoA: 5,
+      lvlHiW: 80, lvlHiA: 95,
+      rpmW: 200, rpmA: 300
+    };
+
+    function applyThresholds() {
+      TH.presW = parseFloat(document.getElementById('th-pres-w').value) || 1070;
+      TH.presA = parseFloat(document.getElementById('th-pres-a').value) || 1090;
+      TH.lvlLoW = parseFloat(document.getElementById('th-lvl-lo-w').value) || 20;
+      TH.lvlLoA = parseFloat(document.getElementById('th-lvl-lo-a').value) || 5;
+      TH.lvlHiW = parseFloat(document.getElementById('th-lvl-hi-w').value) || 80;
+      TH.lvlHiA = parseFloat(document.getElementById('th-lvl-hi-a').value) || 95;
+      TH.rpmW = parseFloat(document.getElementById('th-rpm-w').value) || 200;
+      TH.rpmA = parseFloat(document.getElementById('th-rpm-a').value) || 300;
+
+      // Send to ESP32 via WebSocket
+      var payload = JSON.stringify({
+        cmd: 'SET_THRESH',
+        presW: TH.presW, presA: TH.presA,
+        lvlLoW: TH.lvlLoW, lvlLoA: TH.lvlLoA,
+        lvlHiW: TH.lvlHiW, lvlHiA: TH.lvlHiA,
+        rpmW: TH.rpmW, rpmA: TH.rpmA
+      });
+      var ok = sendWsCommand(payload);
+      var el = document.getElementById('th-status');
+      if (el) el.textContent = ok ? '✓ Sent to ESP32' : '— No connection (JS thresholds updated only)';
+    }
+
+    function sendSetpoints() {
+      var motorDuty = parseInt(document.getElementById('sp-motor').value) || 0;
+      var levelPct = parseInt(document.getElementById('sp-level').value) || 65;
+
+      var ok = sendWsCommand(JSON.stringify({
+        cmd: 'SET_SETPOINTS',
+        motorDuty: motorDuty,
+        levelTarget: levelPct
+      }));
+
+      var el = document.getElementById('sp-status');
+      if (el) {
+        if (ok) {
+          el.textContent = '✓ Setpoints sent to ESP32';
+          el.style.color = 'var(--green)';
+        } else {
+          el.textContent = '— Not connected. Values saved locally only.';
+          el.style.color = 'var(--text-dim)';
+        }
+      }
+    }
+
+    function sendRelayReset() {
+      var ok = sendWsCommand(JSON.stringify({ cmd: 'RELAY_RESET' }));
+      var el = document.getElementById('sys-relay-state');
+      if (ok && el) { el.textContent = 'RESET SENT'; el.style.color = 'var(--green)'; }
+    }
+
+    /* ═══════════════════════════════════════════
+       WS COMMAND SENDER
+       Sends a JSON string to the ESP32 via the
+       existing WebSocket connection.
+       Returns true if WS is open and message sent.
+    ═══════════════════════════════════════════ */
+    function sendWsCommand(jsonStr) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        console.warn('[WS] Not connected — command not sent:', jsonStr);
+        return false;
+      }
+      ws.send(jsonStr);
+      console.log('[WS] Sent:', jsonStr);
+      return true;
+    }
+
+    function getStatus(d) {
+      var rpm = d.motor || 0;
+      if (d.pres >= TH.presA || d.level >= TH.lvlHiA || d.level <= TH.lvlLoA || rpm >= TH.rpmA) return 'ALARM';
+      if (d.pres >= TH.presW || d.level >= TH.lvlHiW || d.level <= TH.lvlLoW || rpm >= TH.rpmW) return 'WARNING';
+      return 'NORMAL';
+    }
+
+    /* ═══════════════════════════════════════════
+       ALARM LOG
+    ═══════════════════════════════════════════ */
+    var alarmLog = [];
+    var lastStatus = 'NORMAL';
+    var alarmSummary = { total: 0, alarms: 0, warnings: 0, ok: 0 };
+
+    function logEvent(sev, msg) {
+      var ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
+      alarmLog.unshift({ ts: ts, sev: sev, msg: msg });
+      if (alarmLog.length > 200) alarmLog.pop();
+      alarmSummary.total++;
+      if (sev === 'ALARM') alarmSummary.alarms++;
+      else if (sev === 'WARNING') alarmSummary.warnings++;
+      else alarmSummary.ok++;
+      renderAlarmList();
+      updateAlarmSummary();
+    }
+
+    function renderAlarmList() {
+      var list = document.getElementById('alarm-list');
+      if (!alarmLog.length) {
+        list.innerHTML = '<div style="padding:24px;text-align:center;font-family:var(--mono);font-size:.7rem;color:var(--text-dim)">NO EVENTS RECORDED</div>';
+        return;
+      }
+      list.innerHTML = alarmLog.map(function (e) {
+        return '<div class="alarm-row">' +
+          '<span class="alarm-time">' + e.ts + '</span>' +
+          '<span class="alarm-sev sev-' + e.sev + '">' + e.sev + '</span>' +
+          '<span class="alarm-msg">' + e.msg + '</span>' +
+          '</div>';
+      }).join('');
+      var ct = alarmLog.filter(function (e) { return e.sev === 'ALARM' || e.sev === 'WARNING'; }).length;
+      document.getElementById('alarm-count-badge').textContent = ct;
+      document.getElementById('tab-alarm-ct').textContent = ct ? '(' + ct + ')' : '';
+    }
+
+    function updateAlarmSummary() {
+      document.getElementById('sum-total').textContent = alarmSummary.total;
+      document.getElementById('sum-alarms').textContent = alarmSummary.alarms;
+      document.getElementById('sum-warnings').textContent = alarmSummary.warnings;
+      document.getElementById('sum-ok').textContent = alarmSummary.ok;
+      if (alarmLog.length) document.getElementById('sum-last').textContent = alarmLog[0].ts;
+    }
+
+    function clearAlarms() { alarmLog = []; renderAlarmList(); }
+    function ackAlarms() {
+      alarmLog = alarmLog.map(function (e) { e.msg = '[ACK] ' + e.msg; return e; });
+      renderAlarmList();
+      // Send ACK to ESP32
+      sendWsCommand(JSON.stringify({ cmd: 'ACK' }));
+    }
+
+    /* ═══════════════════════════════════════════
+       TREND CHART
+    ═══════════════════════════════════════════ */
+    var channelVisible = { temp: true, pres: false, level: true, motor: true };
+    var trendRange = 60; // seconds to show
+
+    function setRange(sec, btn) {
+      trendRange = sec;
+      document.querySelectorAll('.range-btn').forEach(function (b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      drawTrendChart();   // FIX: redraw immediately on range change
+    }
+
+    function toggleChannel(ch, item) {
+      channelVisible[ch] = !channelVisible[ch];
+      item.classList.toggle('hidden', !channelVisible[ch]);
+    }
+
+    var chColors = { temp: '#ff6b35', pres: '#00e5ff', level: '#39ff14', motor: '#bf8fff' };
+    var chScales = {
+      temp: { min: 0, max: 120 },
+      pres: { min: 900, max: 1100 },
+      level: { min: 0, max: 100 },
+      motor: { min: 0, max: 350 }
+    };
+
+    function drawTrendChart() {
+      var canvas = document.getElementById('trend-canvas');
+      var W = canvas.parentElement.clientWidth - 32;
+      var H = 280;
+      canvas.width = W; canvas.height = H;
+      var ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, W, H);
+
+      var now = Date.now();
+      var cutoff = now - trendRange * 1000;
+
+      var startIdx = 0;
+      for (var i = 0; i < data.time.length; i++) {
+        if (data.time[i] >= cutoff) { startIdx = i; break; }
+      }
+      var slice_t = data.time.slice(startIdx);
+      if (slice_t.length < 2) return;
+
+      var tMin = slice_t[0], tMax = slice_t[slice_t.length - 1];
+
+      ctx.strokeStyle = 'rgba(30,53,80,.7)';
+      ctx.lineWidth = 1;
+      for (var g = 0; g <= 4; g++) {
+        var gy = H - H * (g / 4) - 1;
+        ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(74,106,136,.8)';
+      ctx.font = '10px Share Tech Mono';
+      ctx.textAlign = 'center';
+      for (var tg = 0; tg <= 4; tg++) {
+        var tx = W * (tg / 4);
+        var ms = tMin + (tMax - tMin) * (tg / 4);
+        var d2 = new Date(ms);
+        var label = d2.getMinutes().toString().padStart(2, '0') + ':' + d2.getSeconds().toString().padStart(2, '0');
+        ctx.fillText(label, tx, H - 2);
+      }
+
+      ['temp', 'pres', 'level', 'motor'].forEach(function (ch) {
+        if (!channelVisible[ch]) return;
+        var vals = data[ch].slice(startIdx);
+        if (vals.length < 2) return;
+        var sc = chScales[ch];
+        ctx.beginPath();
+        ctx.strokeStyle = chColors[ch];
+        ctx.lineWidth = 1.8;
+        ctx.shadowColor = chColors[ch];
+        ctx.shadowBlur = 4;
+        for (var i = 0; i < vals.length; i++) {
+          var px = W * ((slice_t[i] - tMin) / (tMax - tMin || 1));
+          var py = H - 10 - (H - 20) * ((vals[i] - sc.min) / (sc.max - sc.min));
+          i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      });
+    }
+
+    /* ═══════════════════════════════════════════
+       LEGEND + DELTA
+    ═══════════════════════════════════════════ */
+    function updateLegend(d) {
+      var keys = ['temp', 'pres', 'level', 'motor'];
+      var units = { temp: '°C', pres: 'hPa', level: '%', motor: '%' };
+      keys.forEach(function (k) {
+        var prev = data[k].length > 2 ? data[k][data[k].length - 3] : null;
+        var curr = d[k];
+        var deltaEl = document.getElementById('ld-' + k);
+        document.getElementById('lv-' + k).textContent = Number(curr).toFixed(2) + ' ' + units[k];
+        if (prev !== null) {
+          var diff = curr - prev;
+          var arrow = diff > 0.05 ? '▲' : diff < -0.05 ? '▼' : '—';
+          deltaEl.textContent = arrow + ' ' + Math.abs(diff).toFixed(2);
+          deltaEl.className = 'leg-delta ' + (diff > 0.05 ? 'delta-up' : diff < -0.05 ? 'delta-down' : 'delta-flat');
+        }
+      });
+    }
+
+    /* ═══════════════════════════════════════════
+       PER-SENSOR GAUGE STATUS COLORING
+    ═══════════════════════════════════════════ */
+    function applyPerSensorStatus(ps) {
+      var chDef = { temp: 'var(--ch-temp)', pres: 'var(--ch-pres)', level: 'var(--ch-level)', motor: 'var(--ch-motor)' };
+      var cMap = { NORMAL: null, WARNING: 'var(--yellow)', ALARM: 'var(--red)' };
+
+      // Pressure + Level gauges get their own colour
+      ['pres', 'level'].forEach(function (k) {
+        var col = cMap[ps[k]] || chDef[k];
+        var card = document.querySelector('[data-ch="' + k + '"]');
+        if (card) card.style.setProperty('--ch', col);
+        document.getElementById('v-' + k).style.color = col;
+      });
+
+      // Temperature gauge NEVER alarms (simulated 25.1–25.9°C)
+      document.getElementById('v-temp').style.color = chDef.temp;
+
+      // Motor gauge — colour + status pill + arc
+      var ms = ps.motor || 'NORMAL';
+      var mCol = cMap[ms] || chDef.motor;
+      var arc = document.getElementById('motor-arc');
+      var pill = document.getElementById('motor-status-pill');
+      var pillColors = { NORMAL: 'var(--green)', WARNING: 'var(--yellow)', ALARM: 'var(--red)' };
+      document.getElementById('v-motor').style.color = mCol;
+      if (arc) arc.style.stroke = mCol;
+      if (pill) { pill.style.borderColor = pillColors[ms]; pill.style.color = pillColors[ms]; pill.textContent = ms; }
+    }
+
+    function updateRelayBadge(tripped) {
+      var el = document.getElementById('sb-relay');
+      if (!el) return;
+      el.textContent = tripped ? 'TRIP' : 'OK';
+      el.style.color = tripped ? 'var(--red)' : 'var(--green)';
+    }
+
+    function getPerSensorStatus(d) {
+      var rpm = d.motor || 0;
+      var potP = (d.potPct !== undefined) ? d.potPct : 0;
+      return {
+        temp: 'NORMAL',
+        pres: d.pres >= TH.presA ? 'ALARM' : d.pres >= TH.presW ? 'WARNING' : 'NORMAL',
+        level: (d.level >= TH.lvlHiA || d.level <= TH.lvlLoA) ? 'ALARM'
+          : (d.level >= TH.lvlHiW || d.level <= TH.lvlLoW) ? 'WARNING' : 'NORMAL',
+        motor: rpm >= TH.rpmA ? 'ALARM' : rpm >= TH.rpmW ? 'WARNING' : 'NORMAL'
+      };
+    }
+
+    /* ═══════════════════════════════════════════
+       RENDER ALL
+    ═══════════════════════════════════════════ */
+    function render(d, status, perSensor) {
+      if (!perSensor) perSensor = getPerSensorStatus(d);
+
+      document.getElementById('v-temp').textContent = Number(d.temp).toFixed(2);
+      document.getElementById('v-pres').textContent = Number(d.pres).toFixed(2);
+      document.getElementById('v-level').textContent = Number(d.level).toFixed(0);
+      document.getElementById('v-motor').textContent = Math.round(d.motor || 0);
+
+      updateInstruments(d);
+      applyPerSensorStatus(perSensor);
+
+      // Show motor PWM% in the sub-label inside RPM gauge
+      var pl = document.getElementById('pot-label');
+      if (pl) {
+        var pwmVal = (d.motorPct !== undefined) ? d.motorPct : (d.potPct || 0);
+        pl.textContent = 'PWM: ' + Number(pwmVal).toFixed(0) + '%';
+      }
+
+      var hst = document.getElementById('hdr-status');
+      hst.textContent = '● ' + status;
+      hst.className = 's-' + status;
+
+      var colors = { NORMAL: 'var(--green)', WARNING: 'var(--yellow)', ALARM: 'var(--red)' };
+      var msgs = { NORMAL: 'ALL SYSTEMS NOMINAL', WARNING: 'THRESHOLD EXCEEDED — CHECK SENSORS', ALARM: 'CRITICAL FAULT — OPERATOR ACTION REQUIRED' };
+      document.getElementById('ov-dot').style.background = colors[status];
+      document.getElementById('ov-dot').style.boxShadow = '0 0 10px ' + colors[status];
+      document.getElementById('ov-status-text').style.color = colors[status];
+      document.getElementById('ov-status-text').textContent = status;
+      document.getElementById('ov-msg').textContent = msgs[status];
+      document.getElementById('sb-samples').textContent = sampleCount;
+      document.getElementById('sb-alarms').textContent = alarmSummary.alarms + alarmSummary.warnings;
+
+      updateLegend(d);
+
+      if (status !== lastStatus) {
+        var sev = status === 'ALARM' ? 'ALARM' : status === 'WARNING' ? 'WARNING' : 'OK';
+        var msgMap = { ALARM: 'SYSTEM ENTERED ALARM STATE', WARNING: 'SYSTEM ENTERED WARNING STATE', OK: 'RETURN TO NORMAL', NORMAL: 'RETURN TO NORMAL' };
+        logEvent(sev, msgMap[status] || status);
+        lastStatus = status;
+      }
+    }
+
+    /* ═══════════════════════════════════════════
+       TABS
+    ═══════════════════════════════════════════ */
+    function switchTab(name, btn) {
+      document.querySelectorAll('.tab-pane').forEach(function (p) { p.classList.remove('active'); });
+      document.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.remove('active'); });
+      document.getElementById('tab-' + name).classList.add('active');
+      btn.classList.add('active');
+    }
+
+    /* ═══════════════════════════════════════════
+       CSV EXPORT
+    ═══════════════════════════════════════════ */
+    function exportCSV() {
+      var rows = ['timestamp,temp,pressure,level,motor'];
+      for (var i = 0; i < data.time.length; i++) {
+        rows.push([
+          new Date(data.time[i]).toISOString(),
+          Number(data.temp[i]).toFixed(2),
+          Number(data.pres[i]).toFixed(2),
+          Number(data.level[i]).toFixed(2),
+          Number(data.motor[i]).toFixed(2)
+        ].join(','));
+      }
+      var blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'esp32_data_' + Date.now() + '.csv';
+      a.click();
+    }
+
+    /* ═══════════════════════════════════════════
+       CONNECTION LOGIC
+    ═══════════════════════════════════════════ */
+    let ws = null;
+
+    function toggleConnection() {
+      const btn = document.getElementById('ws-connect-btn');
+      const ipInput = document.getElementById('ws-ip');
+      const ip = ipInput.value.trim();
+
+      if (!ws) {
+        btn.textContent = 'CONNECTING...';
+        ipInput.disabled = true;
+
+        ws = new WebSocket(`ws://${ip}/ws`);
+
+        ws.onopen = () => {
+          btn.textContent = 'DISCONNECT';
+          btn.className = 'ip-btn connected';
+
+          const simBadge = document.getElementById('sim-badge');
+          if (simBadge) simBadge.textContent = '▲ LIVE DATA — ' + ip;
+
+          document.getElementById('footer-banner').textContent =
+            '▲ LIVE DATA — CONNECTED TO ' + ip + ' — ESP32 PROCESS DASHBOARD ▲';
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const json = JSON.parse(event.data);
+
+            const d = {
+              temp: json.temp || 0,
+              pres: json.pressure || 0,
+              level: json.level || 0,
+              motor: json.rpm || 0,   // RPM gauge
+              motorPct: json.motorPct || json.motor || 0,
+              potPct: json.potPct || 0
+            };
+
+            const perSensor = {
+              temp: 'NORMAL',
+              pres: json.presStatus || 'NORMAL',
+              level: json.levelStatus || 'NORMAL',
+              motor: json.rpmStatus || 'NORMAL'
+            };
+
+            pushData(d);
+            const status = json.status || getStatus(d);
+            render(d, status, perSensor);
+            updateRelayBadge(json.relay || false);
+
+            // ── System Info card — all auto-populated from live JSON ────
+            if (json.rssi !== undefined) document.getElementById('sys-rssi').textContent = json.rssi + ' dBm';
+            if (json.heap !== undefined) document.getElementById('sys-heap').textContent = json.heap + ' kB';
+            if (json.wsClients !== undefined) document.getElementById('sys-ws').textContent = json.wsClients;
+            if (json.mac !== undefined) document.getElementById('sys-mac').textContent = json.mac;
+            if (json.ip !== undefined) document.getElementById('sys-ip').textContent = json.ip;
+            if (json.fw !== undefined) document.getElementById('sys-fw').textContent = json.fw;
+            if (json.motorPct !== undefined) document.getElementById('sys-motor').textContent = Number(json.motorPct).toFixed(1) + '% PWM';
+            if (json.spLevel !== undefined) document.getElementById('sys-sp-level').textContent = Number(json.spLevel).toFixed(0) + '%';
+
+            // Uptime display (seconds → hh:mm:ss)
+            if (json.uptime !== undefined) {
+              var u = json.uptime;
+              var h = Math.floor(u / 3600), m = Math.floor((u % 3600) / 60), s = u % 60;
+              document.getElementById('sys-uptime').textContent =
+                h.toString().padStart(2, '0') + ':' + m.toString().padStart(2, '0') + ':' + s.toString().padStart(2, '0');
+            }
+
+            // Motor override status
+            if (json.motorOverride !== undefined) {
+              var ov = document.getElementById('sys-override');
+              if (ov) {
+                ov.textContent = json.motorOverride ? 'DASHBOARD' : 'POT';
+                ov.style.color = json.motorOverride ? 'var(--amber)' : 'var(--text)';
+              }
+            }
+
+            // Relay state label
+            var relEl = document.getElementById('sys-relay-state');
+            if (relEl && json.relay !== undefined) {
+              relEl.textContent = json.relay ? 'TRIPPED' : 'OK';
+              relEl.style.color = json.relay ? 'var(--red)' : 'var(--green)';
+            }
+
+            // Sync threshold inputs with current ESP32 values (on first connect)
+            if (json.thPresW !== undefined) document.getElementById('th-pres-w').value = json.thPresW;
+            if (json.thPresA !== undefined) document.getElementById('th-pres-a').value = json.thPresA;
+            if (json.thLvlLoW !== undefined) document.getElementById('th-lvl-lo-w').value = json.thLvlLoW;
+            if (json.thLvlLoA !== undefined) document.getElementById('th-lvl-lo-a').value = json.thLvlLoA;
+            if (json.thLvlHiW !== undefined) document.getElementById('th-lvl-hi-w').value = json.thLvlHiW;
+            if (json.thLvlHiA !== undefined) document.getElementById('th-lvl-hi-a').value = json.thLvlHiA;
+            if (json.thRpmW !== undefined) document.getElementById('th-rpm-w').value = json.thRpmW;
+            if (json.thRpmA !== undefined) document.getElementById('th-rpm-a').value = json.thRpmA;
+            // Update local TH object to match
+            if (json.thPresW) { TH.presW = json.thPresW; TH.presA = json.thPresA; }
+            if (json.thLvlLoW) { TH.lvlLoW = json.thLvlLoW; TH.lvlLoA = json.thLvlLoA; TH.lvlHiW = json.thLvlHiW; TH.lvlHiA = json.thLvlHiA; }
+            if (json.thRpmW) { TH.rpmW = json.thRpmW; TH.rpmA = json.thRpmA; }
+
+            // Sync motor override slider if override is active
+            if (json.motorOverride && json.motorPct !== undefined) {
+              document.getElementById('sp-motor').value = Math.round(json.motorPct);
+              document.getElementById('sp-motor-val').textContent = Math.round(json.motorPct) + '%';
+            }
+
+            const simBadge = document.getElementById('sim-badge');
+            if (simBadge) simBadge.textContent = '▲ LIVE DATA — ' + (json.ip || ipInput.value.trim());
+
+            if (document.getElementById('tab-trends').classList.contains('active')) drawTrendChart();
+
+          } catch (e) {
+            console.warn("Invalid JSON from ESP32:", e);
+          }
+        };
+
+        ws.onclose = () => {
+          resetConnection();
+        };
+
+        ws.onerror = () => {
+          resetConnection();
+        };
+
+      } else {
+        ws.close();
+        resetConnection();
+      }
+    }
+
+    function resetConnection() {
+      ws = null;
+      const btn = document.getElementById('ws-connect-btn');
+      const ipInput = document.getElementById('ws-ip');
+
+      btn.textContent = 'CONNECT';
+      btn.className = 'ip-btn';
+      ipInput.disabled = false;
+
+      const simBadge = document.getElementById('sim-badge');
+      if (simBadge) simBadge.textContent = '▲ PREVIEW MODE — SIMULATED';
+
+      document.getElementById('sys-ws').textContent = '0';
+      document.getElementById('sys-rssi').textContent = '— dBm';
+      document.getElementById('sys-heap').textContent = '— kB';
+
+      document.getElementById('footer-banner').textContent =
+        '▲ SIMULATED DATA — PREVIEW MODE — NO ESP32 CONNECTED ▲';
+    }
+
+    /* ═══════════════════════════════════════════
+       SIMULATION ENGINE  v7
+       Temperature fixed at 25.5°C (simulated).
+       WARNING scenario: pot 87% (warning zone).
+       ALARM scenario:   pot 100% + pressure over limit.
+       Motor shows 0% when pot simulated at 0.
+    ═══════════════════════════════════════════ */
+    var simInterval = null;
+    var simScenario = 'normal';
+
+    function setScenario(sc, btn) {
+      simScenario = sc;
+      document.querySelectorAll('.scen-btn').forEach(function (b) { b.classList.remove('active'); });
+      if (btn) btn.classList.add('active');
+      if (sc === 'stop') {
+        if (simInterval) { clearInterval(simInterval); simInterval = null; }
+        return;
+      }
+      if (!simInterval) simInterval = setInterval(runSimulation, 500);
+    }
+
+    function runSimulation() {
+      if (ws) return;
+
+      var t = Date.now() / 1000;
+      var d;
+
+      switch (simScenario) {
+        case 'warning':
+          // RPM in warning zone + level getting low
+          d = {
+            temp: 25.5 + (Math.random() * 0.8 - 0.4),
+            pres: 1060 + 8 * Math.sin(t * 0.10),
+            level: 16 + 4 * Math.sin(t * 0.08),   // below 20% → WARNING
+            motor: 220 + 15 * Math.sin(t * 0.30),  // RPM in warning zone (200-300)
+            motorPct: 70,
+            potPct: 70
+          };
+          break;
+        case 'alarm':
+          // RPM over alarm limit OR level critical
+          d = {
+            temp: 25.5 + (Math.random() * 0.8 - 0.4),
+            pres: 1093 + 4 * Math.sin(t * 0.12),
+            level: 3 + 2 * Math.sin(t * 0.10),   // below 5% → ALARM
+            motor: 310 + 10 * Math.sin(t * 0.20),  // RPM over 300 → ALARM
+            motorPct: 0,
+            potPct: 0
+          };
+          break;
+        default: // normal
+          d = {
+            temp: 25.5 + (Math.random() * 0.8 - 0.4),
+            pres: 1013 + 3 * Math.sin(t * 0.07),
+            level: 55 + 25 * Math.sin(t * 0.05),  // 30–80% range
+            motor: 120 + 60 * Math.abs(Math.sin(t * 0.20)),  // 60–180 RPM
+            motorPct: 60 + 20 * Math.sin(t * 0.20),
+            potPct: 60 + 20 * Math.sin(t * 0.20)
+          };
+      }
+
+      d.temp = Math.max(25.1, Math.min(25.9, d.temp));
+      d.pres = Math.max(900, Math.min(1100, d.pres));
+      d.level = Math.max(0, Math.min(100, d.level));
+      d.motor = Math.max(0, Math.min(350, d.motor));
+
+      var perSensor = getPerSensorStatus(d);
+      var status = (perSensor.pres === 'ALARM' || perSensor.level === 'ALARM' || perSensor.motor === 'ALARM') ? 'ALARM'
+        : (perSensor.pres === 'WARNING' || perSensor.level === 'WARNING' || perSensor.motor === 'WARNING') ? 'WARNING'
+          : 'NORMAL';
+
+      updateRelayBadge(status === 'ALARM');
+      pushData(d);
+      render(d, status, perSensor);
+      if (document.getElementById('tab-trends').classList.contains('active')) drawTrendChart();
+    }
+
+    // Auto-start on page load
+    setScenario('normal', document.querySelector('.scen-btn[onclick*="normal"]'));
+
+    /* ═══════════════════════════════════════════
+       CLOCK + UPTIME
+    ═══════════════════════════════════════════ */
+    function updateClock() {
+      document.getElementById('hdr-clock').textContent =
+        new Date().toLocaleTimeString('en-GB', { hour12: false });
+      var up = Math.floor((Date.now() - sessionStart) / 1000);
+      var h = Math.floor(up / 3600), m = Math.floor((up % 3600) / 60), s = up % 60;
+      document.getElementById('hdr-uptime').textContent =
+        'UP ' + h.toString().padStart(2, '0') + ':' + m.toString().padStart(2, '0') + ':' + s.toString().padStart(2, '0');
+      var sm = Math.floor((Date.now() - sessionStart) / 60000);
+      document.getElementById('sum-session').textContent =
+        Math.floor(sm / 60).toString().padStart(2, '0') + ':' + (sm % 60).toString().padStart(2, '0');
+    }
+    setInterval(updateClock, 1000); updateClock();
+
+    // Re-draw chart on tab switch
+    document.querySelector('[onclick*="trends"]').addEventListener('click', function () {
+      setTimeout(drawTrendChart, 50);
+    });
+    window.addEventListener('resize', drawTrendChart);
+    drawTrendChart();
+  </script>
+</body>
+
+</html>
